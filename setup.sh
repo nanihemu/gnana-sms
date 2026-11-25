@@ -57,8 +57,15 @@ info "package manager: $PKG   |   python: $PY"
 
 case "$PKG" in
   dnf|yum)
-    $SUDO "$PKG" install -y make curl git >/dev/null
-    $SUDO "$PKG" install -y "$PY" >/dev/null || warn "could not install $PY via $PKG (using existing)"
+    # Install only what's missing. AL2023 ships `curl` as `curl-minimal`; the
+    # full curl package conflicts with it, so never force-install curl if the
+    # curl binary already exists.
+    command -v make >/dev/null 2>&1 || $SUDO "$PKG" install -y make
+    command -v curl >/dev/null 2>&1 || $SUDO "$PKG" install -y curl
+    command -v git  >/dev/null 2>&1 || $SUDO "$PKG" install -y git
+    command -v "$PY" >/dev/null 2>&1 \
+      || $SUDO "$PKG" install -y "$PY" \
+      || warn "could not install $PY via $PKG (using existing)"
     if [ "$DB_ENGINE" = postgres ]; then
       $SUDO "$PKG" install -y docker >/dev/null 2>&1 \
         || $SUDO "$PKG" install -y docker.io >/dev/null 2>&1 \
@@ -69,8 +76,12 @@ case "$PKG" in
     ;;
   apt)
     $SUDO apt-get update -qq >/dev/null
-    $SUDO apt-get install -y -qq make curl git >/dev/null
-    $SUDO apt-get install -y -qq "$PY" >/dev/null 2>&1 || warn "could not install $PY via apt (using existing)"
+    command -v make >/dev/null 2>&1 || $SUDO apt-get install -y -qq make >/dev/null
+    command -v curl >/dev/null 2>&1 || $SUDO apt-get install -y -qq curl >/dev/null
+    command -v git  >/dev/null 2>&1 || $SUDO apt-get install -y -qq git >/dev/null
+    command -v "$PY" >/dev/null 2>&1 \
+      || $SUDO apt-get install -y -qq "$PY" >/dev/null 2>&1 \
+      || warn "could not install $PY via apt (using existing)"
     if [ "$DB_ENGINE" = postgres ]; then
       $SUDO apt-get install -y -qq docker.io >/dev/null 2>&1 \
         || warn "Docker install failed; we will fall back to SQLite if needed"
