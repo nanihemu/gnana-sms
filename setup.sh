@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+#
+# Gnana setup.sh — one command to go from a fresh clone to a running website.
+# Safe to re-run: it creates missing config, reapplies the DB, seeds the demo
+# users, and restarts the dev server on 0.0.0.0:8000.
+#
+# Usage (run from the repo root):
+#   bash setup.sh                 # full setup (Postgres + Redis via Docker)
+#   USE_SQLITE=1 bash setup.sh    # skip Docker, use a local SQLite file
+#
+# Needs: a Linux box (dnf/apt/yum), an outbound internet connection.
+# Important: you still must open port 8000 in the server's firewall /
+# AWS Security Group before the site is reachable from outside.
+
+set -euo pipefail
+cd "$(dirname "$0")"          # always work relative to this script
+
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+info() { echo -e "${GREEN}[setup]${NC} $*"; }
+warn() { echo -e "${YELLOW}[setup]${NC} $*"; }
+die()  { echo -e "${RED}[setup]${NC} $*" >&2; exit 1; }
+
+SUDO=""
+[ "$(id -u)" -eq 0 ] || SUDO="sudo"
+
+# ---------------------------------------------------------------------------
+# 1) choose DB path, find a package manager and a decent Python
+# ---------------------------------------------------------------------------
+DB_ENGINE=postgres
+if [ "${USE_SQLITE:-0}" = "1" ]; then
+  DB_ENGINE=sqlite
+  warn "USE_SQLITE=1 -> skipping Docker; using a SQLite file instead"
+fi
+
+if   command -v dnf     >/dev/null 2>&1; then PKG=dnf
+elif command -v apt-get >/dev/null 2>&1; then PKG=apt
+elif command -v yum     >/dev/null 2>&1; then PKG=yum
+else die "No supported package manager found (need dnf/apt/yum)."; fi
+
+PY=""
+for candidate in python3.12 python3.11 python3.10 python3; do
+  if command -v "$candidate" >/dev/null 2>&1; then PY="$candidate"; break; fi
+done
+[ -n "$PY" ] || die "Python is not installed."
+
+# Project needs Python >= 3.10
+"$PY" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' \
+  || die "Python $("$PY" -c 'import sys; print(sys.version.split()[0])') is too old; install Python 3.10+."
+
+# ---------------------------------------------------------------------------
+# 2) install system packages (idempotent; missing ones only)
+# ---------------------------------------------------------------------------
+info "package manager: $PKG   |   python: $PY"
+
+case "$PKG" in
+  dnf|yum)
+    $SUDO "$PKG" install -y make curl git >/dev/null
+    $SUDO "$PKG" install -y "$PY" >/dev/null || warn "could not install $PY via $PKG (using existing)"
+    if [ "$DB_ENGINE" = postgres ]; then
+      $SUDO "$PKG" install -y docker >/dev/null 2>&1 \
+        || $SUDO "$PKG" install -y docker.io >/dev/null 2>&1 \
+        || warn "Docker install failed; we will fall back to SQLite if needed"
+      $SUDO "$PKG" install -y docker-compose-plugin >/dev/null 2>&1 || true
+      $SUDO systemctl enable --now docker >/dev/null 2>&1 || true
+    fi
+    ;;
+  apt)
+    $SUDO apt-get update -qq >/dev/null
+    $SUDO apt-get install -y -qq make curl git >/dev/null
+    $SUDO apt-get install -y -qq "$PY" >/dev/null 2>&1 || warn "could not install $PY via apt (using existing)"
+    if [ "$DB_ENGINE" = postgres ]; then
+      $SUDO apt-get install -y -qq docker.io >/dev/null 2>&1 \
+        || warn "Docker install failed; we will fall back to SQLite if needed"
+      $SUDO apt-get install -y -qq docker-compose-plugin >/dev/null 2>&1 || true
+      $SUDO systemctl enable --now docker >/dev/null 2>&1 || true
+    fi
+    ;;
+esac
+
+# Docker is required for Postgres+Redis; fall back to SQLite if it is not usable.
+if [ "$DB_ENGINE" = postgres ] && ! docker compose version >/dev/null 2>&1; then
+  warn "Docker Compose is not available -> falling back to SQLite"
+  DB_ENGINE=sqlite
+fi
+
+# ---------------------------------------------------------------------------
+# 3) .env — create, set a real SECRET_KEY, allow this server's public IP
+# ---------------------------------------------------------------------------
+if [ ! -f .env ]; then
+  warn ".env missing -> creating it from .env.example"
+  cp .env.example .env
+fi
+
+if grep -qE '^(SECRET_KEY=|SECRET_KEY=replace-with)' .env; then
+  KEY=$("$PY" -c "import secrets; print(secrets.token_urlsafe(50))")
+  sed -i "s|^SECRET_KEY=.*|SECRET_KEY=$KEY|" .env
+  info "generated a fresh SECRET_KEY"
+fi
+
+PUBLIC_IP=$(curl -s --max-time 5 http://checkip.amazonaws.com || true)
+if [ -z "$PUBLIC_IP" ]; then PUBLIC_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || true); fi
+if [ -n "$PUBLIC_IP" ] && ! grep -qF "$PUBLIC_IP" .env; then
+  sed -i "s|^DJANGO_ALLOWED_HOSTS=.*|&,$PUBLIC_IP|" .env
+  info "added $PUBLIC_IP to DJANGO_ALLOWED_HOSTS"
+fi
+
+sed -i "s|^DB_ENGINE=.*|DB_ENGINE=$DB_ENGINE|" .env
+
+# ---------------------------------------------------------------------------
+# 4) Python deps — create the venv and install everything
+# ---------------------------------------------------------------------------
+info "installing Python dependencies into .venv (may take a few minutes)"
+if [ ! -x .venv/bin/python ]; then "$PY" -m venv .venv; fi
+.venv/bin/pip install --upgrade pip -q
+.venv/bin/pip install -r requirements.txt -q
+
+# ---------------------------------------------------------------------------
+# 5) database — start Docker services (Postgres+Redis) and wait for healthy
+# ---------------------------------------------------------------------------
+if [ "$DB_ENGINE" = postgres ]; then
+  info "starting Postgres + Redis (Docker)"
+  docker compose down --remove-orphans >/dev/null 2>&1 || true
+  docker compose up -d
+  info "waiting for Postgres to become healthy..."
+  ok=0
+  for _ in $(seq 1 30); do
+    if docker compose ps db --format '{{.Status}}' 2>/dev/null | grep -q healthy; then ok=1; break; fi
+    sleep 2
+  done
+  [ "$ok" = 1 ] || die "Postgres did not become healthy. Run: docker compose ps"
+fi
+
+# ---------------------------------------------------------------------------
+# 6) migrate + seed (both idempotent)
+# ---------------------------------------------------------------------------
+info "applying database migrations"
+.venv/bin/python manage.py migrate --noinput
+
+info "seeding demo users (one per role)"
+.venv/bin/python manage.py seed_demo_users
+
+# ---------------------------------------------------------------------------
+# 7) run the dev server on 0.0.0.0:8000 (restart if already running)
+# ---------------------------------------------------------------------------
+info "starting dev server on 0.0.0.0:8000"
+pkill -f "manage.py runserver" >/dev/null 2>&1 || true
+sleep 1
+LOG=/tmp/gnana-runserver.log
+nohup .venv/bin/python manage.py runserver 0.0.0.0:8000 >"$LOG" 2>&1 &
+SERVER_PID=$!
+
+up=0
+for _ in $(seq 1 15); do
+  if curl -s -o /dev/null --max-time 2 http://localhost:8000/accounts/login/; then up=1; break; fi
+  sleep 1
+done
+if [ "$up" = 1 ]; then
+  info "server is up (PID $SERVER_PID, log: $LOG)"
+else
+  warn "server did not answer; last log lines:"
+  tail -5 "$LOG"
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# 8) summary
+# ---------------------------------------------------------------------------
+PASS=$(grep -E '^DEMO_PASSWORD=' .env | cut -d= -f2)
+PASS=${PASS:-demo1234}
+echo
+info "============================================================"
+info "Website:  http://${PUBLIC_IP:-<server-ip>}:8000/accounts/login/"
+info "Password: $PASS  (every demo account uses the same one)"
+info "Accounts: superadmin@demo.gnana.in  admin@demo.gnana.in"
+info "          teacher@demo.gnana.in  student@demo.gnana.in"
+info "          parent@demo.gnana.in"
+info "If the site doesn't load: open TCP port 8000 in your"
+info "AWS Security Group (or server firewall) for your IP."
+info "============================================================"

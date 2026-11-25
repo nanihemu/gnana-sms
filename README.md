@@ -41,9 +41,22 @@ Each school is a client with its own branded homepage at `<school>.gnana.in`.
 ## Getting started
 
 ### Prerequisites
-- Python 3.12, Git, Docker Desktop
+- Linux server or your own machine: Python 3.10+, Git, Docker (optional —
+  the setup script falls back to SQLite if Docker isn't available)
 
-### Setup
+### One-command setup (fresh Linux server / AWS EC2)
+```bash
+git clone https://github.com/nanihemu/gnana-sms.git
+cd gnana-sms
+bash setup.sh          # installs deps, starts DB, migrates, seeds, runs server
+```
+`setup.sh` is safe to re-run. After it finishes, open
+`http://<server-ip>:8000/accounts/login/` (remember to open TCP port 8000 in
+your AWS Security Group / firewall first).
+
+If you don't want Docker: `USE_SQLITE=1 bash setup.sh`.
+
+### Manual setup
 ```bash
 git clone https://github.com/<your-username>/gnana.git
 cd gnana
