@@ -103,7 +103,7 @@ The workflow for each day's task:
 3. Run tests and linters. Fix failures before telling me it is done.
 4. Give me the exact commands to run and click through so I can test it
    myself, plus a short checklist of what I should see.
-5. Suggest a commit message. I will push to GitHub myself.
+5. Suggest a commit message. 
 6. Do not quiz me or explain concepts at length unless I ask. I review the
    code after testing, and I will ask for the walkthrough then.
 
