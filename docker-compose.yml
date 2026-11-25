@@ -25,5 +25,37 @@ services:
       timeout: 3s
       retries: 10
 
+  web:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile
+    command: python manage.py runserver 0.0.0.0:8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app                 # live code reload during development
+    environment:               # DB_HOST=db points at the db service; ALLOWED_HOSTS=* for dev
+      DB_ENGINE: postgres
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: gnana
+      DB_USER: gnana
+      DB_PASSWORD: gnana
+      DJANGO_DEBUG: "true"
+      DJANGO_ALLOWED_HOSTS: "*"
+      SECRET_KEY: dev-insecure-docker-compose-only
+      DEMO_PASSWORD: demo1234
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/accounts/login/', timeout=2).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
 volumes:
   pgdata:

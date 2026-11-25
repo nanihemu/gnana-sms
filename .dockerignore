@@ -1,0 +1,17 @@
+# Build context exclusions — keep the image small and secrets out.
+.venv
+venv
+__pycache__
+*.py[cod]
+*.log
+.git
+.env
+db.sqlite3
+staticfiles
+media
+node_modules
+.pytest_cache
+.ruff_cache
+.mypy_cache
+docs
+*.md

@@ -4,6 +4,17 @@
 - Phase: 0 (Foundations)
 - Last completed day: 1
 
+## Same-day additions (tooling)
+
+- `setup.sh`: one command from fresh clone to running site — installs system
+  deps, creates `.env` (real SECRET_KEY + public IP in ALLOWED_HOSTS), installs
+  Python deps, starts the stack, migrates, seeds, waits for the site. Falls
+  back to `USE_SQLITE=1 bash setup.sh` when Docker is unavailable.
+- Full Docker stack: `infra/Dockerfile` + `infra/entrypoint.sh` + a `web`
+  service in `docker-compose.yml` (web builds the app, waits for Postgres,
+  migrates and seeds on startup, serves on :8000; db and redis remain in the
+  same compose file). `.dockerignore` keeps the image small and secrets out.
+
 ## Day 1 — Repo setup, Docker, Django 5 + custom User, role dashboards
 
 Built (and tests pass):

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
 # Gnana setup.sh — one command to go from a fresh clone to a running website.
-# Safe to re-run: it creates missing config, reapplies the DB, seeds the demo
-# users, and restarts the dev server on 0.0.0.0:8000.
+# Safe to re-run: it creates missing config, starts web+db+redis (Docker),
+# applies the DB, seeds the demo users, and waits until the site answers.
 #
 # Usage (run from the repo root):
-#   bash setup.sh                 # full setup (Postgres + Redis via Docker)
-#   USE_SQLITE=1 bash setup.sh    # skip Docker, use a local SQLite file
+#   bash setup.sh                 # full stack (web + Postgres + Redis via Docker)
+#   USE_SQLITE=1 bash setup.sh    # skip Docker, run the app against a local SQLite file
 #
 # Needs: a Linux box (dnf/apt/yum), an outbound internet connection.
 # Important: you still must open port 8000 in the server's firewall /
@@ -118,51 +118,53 @@ if [ ! -x .venv/bin/python ]; then "$PY" -m venv .venv; fi
 .venv/bin/pip install -r requirements.txt -q
 
 # ---------------------------------------------------------------------------
-# 5) database — start Docker services (Postgres+Redis) and wait for healthy
+# 5) start the app — with Docker (web+db+redis) or with a local venv (SQLite)
 # ---------------------------------------------------------------------------
 if [ "$DB_ENGINE" = postgres ]; then
-  info "starting Postgres + Redis (Docker)"
+  info "building and starting web + Postgres + Redis (Docker)"
   docker compose down --remove-orphans >/dev/null 2>&1 || true
-  docker compose up -d
-  info "waiting for Postgres to become healthy..."
-  ok=0
-  for _ in $(seq 1 30); do
-    if docker compose ps db --format '{{.Status}}' 2>/dev/null | grep -q healthy; then ok=1; break; fi
+  docker compose up -d --build
+  info "waiting for the web app to answer on :8000..."
+  up=0
+  for _ in $(seq 1 60); do
+    if curl -s -o /dev/null --max-time 2 http://localhost:8000/accounts/login/; then up=1; break; fi
     sleep 2
   done
-  [ "$ok" = 1 ] || die "Postgres did not become healthy. Run: docker compose ps"
-fi
-
-# ---------------------------------------------------------------------------
-# 6) migrate + seed (both idempotent)
-# ---------------------------------------------------------------------------
-info "applying database migrations"
-.venv/bin/python manage.py migrate --noinput
-
-info "seeding demo users (one per role)"
-.venv/bin/python manage.py seed_demo_users
-
-# ---------------------------------------------------------------------------
-# 7) run the dev server on 0.0.0.0:8000 (restart if already running)
-# ---------------------------------------------------------------------------
-info "starting dev server on 0.0.0.0:8000"
-pkill -f "manage.py runserver" >/dev/null 2>&1 || true
-sleep 1
-LOG=/tmp/gnana-runserver.log
-nohup .venv/bin/python manage.py runserver 0.0.0.0:8000 >"$LOG" 2>&1 &
-SERVER_PID=$!
-
-up=0
-for _ in $(seq 1 15); do
-  if curl -s -o /dev/null --max-time 2 http://localhost:8000/accounts/login/; then up=1; break; fi
-  sleep 1
-done
-if [ "$up" = 1 ]; then
-  info "server is up (PID $SERVER_PID, log: $LOG)"
+  if [ "$up" = 1 ]; then
+    info "web app is up (container: web; see: docker compose ps)"
+  else
+    warn "web did not answer; last logs:"
+    docker compose logs web | tail -20
+    warn "Run: docker compose ps / docker compose logs web"
+    exit 1
+  fi
 else
-  warn "server did not answer; last log lines:"
-  tail -5 "$LOG"
-  exit 1
+  # SQLite path: no Docker, plain local venv.
+  info "applying database migrations"
+  .venv/bin/python manage.py migrate --noinput
+
+  info "seeding demo users (one per role)"
+  .venv/bin/python manage.py seed_demo_users
+
+  info "starting dev server on 0.0.0.0:8000"
+  pkill -f "manage.py runserver" >/dev/null 2>&1 || true
+  sleep 1
+  LOG=/tmp/gnana-runserver.log
+  nohup .venv/bin/python manage.py runserver 0.0.0.0:8000 >"$LOG" 2>&1 &
+  SERVER_PID=$!
+
+  up=0
+  for _ in $(seq 1 15); do
+    if curl -s -o /dev/null --max-time 2 http://localhost:8000/accounts/login/; then up=1; break; fi
+    sleep 1
+  done
+  if [ "$up" = 1 ]; then
+    info "server is up (PID $SERVER_PID, log: $LOG)"
+  else
+    warn "server did not answer; last log lines:"
+    tail -5 "$LOG"
+    exit 1
+  fi
 fi
 
 # ---------------------------------------------------------------------------

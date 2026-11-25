@@ -48,22 +48,36 @@ Each school is a client with its own branded homepage at `<school>.gnana.in`.
 ```bash
 git clone https://github.com/nanihemu/gnana-sms.git
 cd gnana-sms
-bash setup.sh          # installs deps, starts DB, migrates, seeds, runs server
+bash setup.sh          # installs deps, builds web+db+redis, migrates, seeds, starts
 ```
 `setup.sh` is safe to re-run. After it finishes, open
 `http://<server-ip>:8000/accounts/login/` (remember to open TCP port 8000 in
 your AWS Security Group / firewall first).
 
-If you don't want Docker: `USE_SQLITE=1 bash setup.sh`.
+If you don't want Docker: `USE_SQLITE=1 bash setup.sh` runs the app against a
+local SQLite file instead.
 
-### Manual setup
+### Running with Docker (manual)
+Everything runs in containers: `web` (Django, built from `infra/Dockerfile`),
+`db` (Postgres 16), and `redis`. The web container waits for Postgres, runs
+migrations and seeds the demo users automatically on startup.
+
+```bash
+git clone https://github.com/nanihemu/gnana-sms.git
+cd gnana-sms
+cp .env.example .env          # then edit values
+docker compose up -d --build  # build and start web + Postgres + Redis
+docker compose ps             # check all three are healthy
+docker compose logs -f web    # follow the app logs
+```
+
+### Manual setup without Docker
 ```bash
 git clone https://github.com/<your-username>/gnana.git
 cd gnana
 cp .env.example .env          # then edit values
 make install                  # create venv and install dependencies
-docker compose up -d          # start Postgres and Redis
-make migrate                  # apply migrations
+make migrate                  # apply migrations (SQLite/Postgres as configured)
 make seed                     # create the 5 demo users (one per role)
 make run                      # start Django at http://localhost:8000
 ```
