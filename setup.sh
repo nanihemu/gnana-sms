@@ -55,22 +55,34 @@ done
 # ---------------------------------------------------------------------------
 info "package manager: $PKG   |   python: $PY"
 
+# dnf: if a package pull would fail because curl conflicts with the
+# preinstalled curl-minimal (Amazon Linux 2023), retry with --allowerasing
+# so curl-minimal is swapped for full curl instead of dying.
+try_install_dnf() {
+  if ! $SUDO "$PKG" install -y "$1" >/dev/null 2>&1; then
+    warn "first install of $1 failed; retrying with --allowerasing (curl-minimal swap)"
+    $SUDO "$PKG" install -y --allowerasing "$1" >/dev/null 2>&1 \
+      || warn "could not install $1"
+  fi
+}
+
 case "$PKG" in
   dnf|yum)
     # Install only what's missing. AL2023 ships `curl` as `curl-minimal`; the
     # full curl package conflicts with it, so never force-install curl if the
     # curl binary already exists.
-    command -v make >/dev/null 2>&1 || $SUDO "$PKG" install -y make
-    command -v curl >/dev/null 2>&1 || $SUDO "$PKG" install -y curl
-    command -v git  >/dev/null 2>&1 || $SUDO "$PKG" install -y git
-    command -v "$PY" >/dev/null 2>&1 \
-      || $SUDO "$PKG" install -y "$PY" \
-      || warn "could not install $PY via $PKG (using existing)"
+    command -v make >/dev/null 2>&1 || try_install_dnf make
+    command -v curl >/dev/null 2>&1 || try_install_dnf curl
+    command -v git  >/dev/null 2>&1 || try_install_dnf git
+    if ! command -v "$PY" >/dev/null 2>&1; then try_install_dnf "$PY"; fi
     if [ "$DB_ENGINE" = postgres ]; then
-      $SUDO "$PKG" install -y docker >/dev/null 2>&1 \
-        || $SUDO "$PKG" install -y docker.io >/dev/null 2>&1 \
-        || warn "Docker install failed; we will fall back to SQLite if needed"
-      $SUDO "$PKG" install -y docker-compose-plugin >/dev/null 2>&1 || true
+      if ! command -v docker >/dev/null 2>&1; then
+        try_install_dnf docker
+      fi
+      if ! docker compose version >/dev/null 2>&1; then
+        command -v docker-compose-plugin >/dev/null 2>&1 \
+          || try_install_dnf docker-compose-plugin
+      fi
       $SUDO systemctl enable --now docker >/dev/null 2>&1 || true
     fi
     ;;
@@ -83,7 +95,8 @@ case "$PKG" in
       || $SUDO apt-get install -y -qq "$PY" >/dev/null 2>&1 \
       || warn "could not install $PY via apt (using existing)"
     if [ "$DB_ENGINE" = postgres ]; then
-      $SUDO apt-get install -y -qq docker.io >/dev/null 2>&1 \
+      command -v docker >/dev/null 2>&1 \
+        || $SUDO apt-get install -y -qq docker.io >/dev/null 2>&1 \
         || warn "Docker install failed; we will fall back to SQLite if needed"
       $SUDO apt-get install -y -qq docker-compose-plugin >/dev/null 2>&1 || true
       $SUDO systemctl enable --now docker >/dev/null 2>&1 || true
