@@ -43,8 +43,8 @@ services:
       DB_PASSWORD: gnana
       DJANGO_DEBUG: "true"
       DJANGO_ALLOWED_HOSTS: "*"
-      SECRET_KEY: dev-insecure-docker-compose-only
-      DEMO_PASSWORD: demo1234
+      SECRET_KEY: ${SECRET_KEY:-dev-insecure-docker-compose-only}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-demo1234}
     depends_on:
       db:
         condition: service_healthy

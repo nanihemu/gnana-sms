@@ -128,10 +128,18 @@ if [ ! -f .env ]; then
   cp .env.example .env
 fi
 
-if grep -qE '^(SECRET_KEY=|SECRET_KEY=replace-with)' .env; then
+# Set a real SECRET_KEY only when .env does not already have a valid one
+# (>= 20 chars, not the placeholder). Regenerating on every run would
+# invalidate CSRF tokens / sessions that were signed with the old key.
+existing_key=$(grep -E '^SECRET_KEY=' .env | head -n1 | cut -d= -f2-)
+if [ -z "$existing_key" ] \
+  || [ "${#existing_key}" -lt 20 ] \
+  || [ "$existing_key" = "replace-with-a-long-random-string" ]; then
   KEY=$("$PY" -c "import secrets; print(secrets.token_urlsafe(50))")
   sed -i "s|^SECRET_KEY=.*|SECRET_KEY=$KEY|" .env
   info "generated a fresh SECRET_KEY"
+else
+  info "keeping the existing SECRET_KEY (stable CSRF/sessions)"
 fi
 
 PUBLIC_IP=$(curl -s --max-time 5 http://checkip.amazonaws.com || true)
