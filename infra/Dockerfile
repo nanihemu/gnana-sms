@@ -15,9 +15,11 @@ RUN pip install -r requirements.txt
 COPY . .
 
 # Entry point waits for Postgres, migrates, seeds, then execs the CMD.
+# Called via `sh` so no executable bit is required (host bind mounts can
+# shadow a chmod'd COPY of this file).
 RUN chmod +x infra/entrypoint.sh
 
 EXPOSE 8000
 
-ENTRYPOINT ["/app/infra/entrypoint.sh"]
+ENTRYPOINT ["sh", "/app/infra/entrypoint.sh"]
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
