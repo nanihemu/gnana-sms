@@ -104,10 +104,20 @@ case "$PKG" in
     ;;
 esac
 
-# Docker is required for Postgres+Redis; fall back to SQLite if it is not usable.
-if [ "$DB_ENGINE" = postgres ] && ! docker compose version >/dev/null 2>&1; then
-  warn "Docker Compose is not available -> falling back to SQLite"
-  DB_ENGINE=sqlite
+# Detect whichever compose binary exists: `docker compose` (v2) or the
+# legacy `docker-compose` (v1). Docker is required for Postgres+Redis; if
+# neither is usable, fall back to SQLite.
+COMPOSE=""
+if [ "$DB_ENGINE" = postgres ]; then
+  if docker compose version >/dev/null 2>&1; then
+    COMPOSE="docker compose"
+  elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE="docker-compose"
+  fi
+  if [ -z "$COMPOSE" ]; then
+    warn "Docker Compose is not available -> falling back to SQLite"
+    DB_ENGINE=sqlite
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -146,20 +156,20 @@ if [ ! -x .venv/bin/python ]; then "$PY" -m venv .venv; fi
 # ---------------------------------------------------------------------------
 if [ "$DB_ENGINE" = postgres ]; then
   info "building and starting web + Postgres + Redis (Docker)"
-  docker compose down --remove-orphans >/dev/null 2>&1 || true
-  docker compose up -d --build
+  $COMPOSE down --remove-orphans >/dev/null 2>&1 || true
+  $COMPOSE up -d --build
   info "waiting for the web app to answer on :8000..."
   up=0
-  for _ in $(seq 1 60); do
+  for _ in $(seq 1 90); do
     if curl -s -o /dev/null --max-time 2 http://localhost:8000/accounts/login/; then up=1; break; fi
     sleep 2
   done
   if [ "$up" = 1 ]; then
-    info "web app is up (container: web; see: docker compose ps)"
+    info "web app is up (container: web; see: $COMPOSE ps)"
   else
     warn "web did not answer; last logs:"
-    docker compose logs web | tail -20
-    warn "Run: docker compose ps / docker compose logs web"
+    $COMPOSE logs web | tail -20
+    warn "Run: $COMPOSE ps / $COMPOSE logs web"
     exit 1
   fi
 else
