@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Sign in · Gnana{% endblock %}
+
+{% block content %}
+<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-brand-700 via-indigo-800 to-slate-900 px-4">
+  <div class="w-full max-w-md">
+    <div class="text-center mb-8">
+      <div class="mx-auto h-14 w-14 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center text-2xl font-black text-white mb-3">
+        G
+      </div>
+      <h1 class="text-3xl font-bold text-white">Gnana</h1>
+      <p class="mt-1 text-sm text-indigo-200">School management, in one place.</p>
+    </div>
+
+    <div class="rounded-2xl bg-white p-8 shadow-xl">
+      <h2 class="text-lg font-semibold text-slate-900">Sign in</h2>
+      <p class="mb-6 text-sm text-slate-500">Use your email and password.</p>
+
+      {% if form.errors %}
+        <div class="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          Invalid email or password. Try again.
+        </div>
+      {% endif %}
+
+      <form method="post" action="{% url 'accounts:login' %}" class="space-y-5">
+        {% csrf_token %}
+
+        <div>
+          <label for="{{ form.username.id_for_label }}" class="mb-1.5 block text-sm font-medium text-slate-700">
+            Email
+          </label>
+          <input
+            type="email" name="{{ form.username.html_name }}" id="{{ form.username.id_for_label }}"
+            value="{{ form.username.value|default:'' }}" autofocus required
+            class="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 outline-none"
+            placeholder="you@school.gnana.in"
+          >
+        </div>
+
+        <div>
+          <label for="{{ form.password.id_for_label }}" class="mb-1.5 block text-sm font-medium text-slate-700">
+            Password
+          </label>
+          <input
+            type="password" name="{{ form.password.html_name }}" id="{{ form.password.id_for_label }}" required
+            class="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 outline-none"
+            placeholder="••••••••"
+          >
+        </div>
+
+        <button
+          type="submit"
+          class="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition"
+        >
+          Sign in
+        </button>
+
+        {% if next %}
+          <input type="hidden" name="next" value="{{ next }}">
+        {% endif %}
+      </form>
+    </div>
+
+    <div class="mt-6 rounded-xl border border-white/15 bg-white/5 px-5 py-4 text-xs text-indigo-100">
+      <p class="mb-2 font-semibold text-white">Demo accounts (password: <code class="rounded bg-white/10 px-1 py-0.5">demo1234</code>)</p>
+      <ul class="space-y-1 font-mono">
+        <li>superadmin@demo.gnana.in — Super Admin</li>
+        <li>admin@demo.gnana.in — School Admin</li>
+        <li>teacher@demo.gnana.in — Teacher</li>
+        <li>student@demo.gnana.in — Student</li>
+        <li>parent@demo.gnana.in — Parent</li>
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}

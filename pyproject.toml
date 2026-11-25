@@ -1,0 +1,29 @@
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+python_files = ["tests.py", "test_*.py", "*_tests.py"]
+addopts = "-q --no-header"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+src = ["apps", "config"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# Django-generated migrations are not hand-formatted
+"apps/**/migrations/*.py" = ["E501", "I001"]
+# Settings split across files re-export base names via star imports on purpose
+"config/settings/*.py" = ["F405"]
+
+[tool.black]
+target-version = ["py312"]
+line-length = 88
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "."
+check_untyped_defs = true
+exclude = ["migrations", ".venv"]
+# django-stubs (and the mypy_django_plugin) will be added when services.py appears.

@@ -51,8 +51,25 @@ cp .env.example .env          # then edit values
 make install                  # create venv and install dependencies
 docker compose up -d          # start Postgres and Redis
 make migrate                  # apply migrations
+make seed                     # create the 5 demo users (one per role)
 make run                      # start Django at http://localhost:8000
 ```
+
+### Demo accounts
+All demo users share the password `demo1234` (override with `DEMO_PASSWORD`
+in `.env`):
+
+| Role | Email |
+|---|---|
+| Super Admin | superadmin@demo.gnana.in |
+| School Admin | admin@demo.gnana.in |
+| Teacher | teacher@demo.gnana.in |
+| Student | student@demo.gnana.in |
+| Parent | parent@demo.gnana.in |
+
+Each user is redirected to their own empty dashboard after login
+(`/platform/dashboard/`, `/admin/dashboard/`, `/teacher/dashboard/`,
+`/student/dashboard/`, `/parent/dashboard/`).
 
 ### Useful commands
 ```bash

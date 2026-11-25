@@ -1,0 +1,11 @@
+Django>=5.1,<5.2
+psycopg[binary]>=3.2,<4
+python-dotenv>=1.0
+
+# Lint / format / test
+ruff>=0.6
+black>=24
+mypy>=1.11
+pytest>=8
+pytest-django>=4.9
+factory-boy>=3.3
